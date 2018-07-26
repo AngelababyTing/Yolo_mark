@@ -13,7 +13,7 @@
 #include <opencv2/opencv.hpp>			// C++
 #include <opencv2/core/version.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
-#include <opencv2/highgui/highgui.hpp>
+#include <opencv2/highgui.hpp>
 
 #ifdef _DEBUG
 #define LIB_SUFFIX "d.lib"
@@ -38,17 +38,10 @@ using namespace cv;
 std::atomic<bool> right_button_click;
 std::atomic<bool> clear_marks;
 
-std::atomic<bool> show_help;
-std::atomic<bool> exit_flag(false);
-
-std::atomic<int> mark_line_width(2); // default mark line width is 2 pixels.
-const int MAX_MARK_LINE_WIDTH = 3;
-std::atomic<bool> show_mark_class(true);
-
 std::atomic<int> x_start, y_start;
 std::atomic<int> x_end, y_end;
 std::atomic<int> x_size, y_size;
-std::atomic<bool> draw_select, selected, undo;
+std::atomic<bool> draw_select, selected;
 
 std::atomic<int> add_id_img;
 Rect prev_img_rect(0, 0, 50, 100);
@@ -170,6 +163,10 @@ int main(int argc, char *argv[])
 		}
 
 		bool show_mouse_coords = false;
+		//============================
+		bool position = false;
+		float array[4] = {0.0, 0.0, 0.0, 0.0};
+		//============================
 		std::vector<std::string> filenames_in_folder;
 		//glob(images_path, filenames_in_folder); // void glob(String pattern, std::vector<String>& result, bool recursive = false);
 		cv::String images_path_cv = images_path;
@@ -337,17 +334,20 @@ int main(int argc, char *argv[])
 		int const max_object_id = (synset_txt.size() > 0) ? synset_txt.size() : 20;
 		int tb_res_2 = createTrackbar(trackbar_name_2, window_name, &current_obj_id, max_object_id);
 
+		//===================================
+
+		//===================================
 
 		do {
 			//trackbar_value = min(max(0, trackbar_value), (int)jpg_filenames_path.size() - 1);
 
-			if (old_trackbar_value != trackbar_value || exit_flag)
+			if (old_trackbar_value != trackbar_value)
 			{
 				trackbar_value = min(max(0, trackbar_value), (int)jpg_filenames_path.size() - 1);
 				setTrackbarPos(trackbar_name, window_name, trackbar_value);
 				frame(Rect(0, 0, frame.cols, preview.rows)) = Scalar::all(0);
 
-				// save current coords
+				// 保存當前的坐標
 				if (old_trackbar_value >= 0) // && current_coord_vec.size() > 0) // Yolo v2 can processes background-image without objects
 				{
 					try
@@ -362,7 +362,7 @@ int main(int argc, char *argv[])
 						std::ofstream ofs(txt_filename_path, std::ios::out | std::ios::trunc);
 						ofs << std::fixed;
 
-						// store coords to [image name].txt
+						// 將coords存儲到[image name] .txt
 						for (auto &i : current_coord_vec)
 						{
 							float const relative_center_x = (float)(i.abs_rect.x + i.abs_rect.width / 2) / full_image_roi.cols;
@@ -379,8 +379,8 @@ int main(int argc, char *argv[])
 								relative_center_x << " " << relative_center_y << " " <<
 								relative_width << " " << relative_height << std::endl;
 						}
-						
-						// store [path/image name.jpg] to train.txt
+
+						// 將[path / image name.jpg]存儲到train.txt
 						auto it = std::find(difference_filenames.begin(), difference_filenames.end(), filename_without_ext);
 						if (it != difference_filenames.end())
 						{
@@ -394,6 +394,8 @@ int main(int argc, char *argv[])
 					}
 					catch (...) { std::cout << " Exception when try to write txt-file \n"; }
 				}
+
+
 
 				// show preview images
 				for (size_t i = 0; i < preview_number && (i + trackbar_value) < jpg_filenames_path.size(); ++i)
@@ -432,7 +434,7 @@ int main(int argc, char *argv[])
 								ss >> coord.id;
 								if (coord.id < 0) continue;
 								float relative_coord[4] = { -1, -1, -1, -1 };  // rel_center_x, rel_center_y, rel_width, rel_height                          
-								for (size_t i = 0; i < 4; i++) if(!(ss >> relative_coord[i])) continue;
+								for (size_t i = 0; i < 4; i++) if (!(ss >> relative_coord[i])) continue;
 								for (size_t i = 0; i < 4; i++) if (relative_coord[i] < 0) continue;
 								coord.abs_rect.x = (relative_coord[0] - relative_coord[2] / 2) * (float)full_image_roi.cols;
 								coord.abs_rect.y = (relative_coord[1] - relative_coord[3] / 2) * (float)full_image_roi.rows;
@@ -479,13 +481,6 @@ int main(int argc, char *argv[])
 				rectangle(frame, rect_dst, color, 2);
 			}
 
-			if (undo) {
-				undo = false;
-				if(current_coord_vec.size() > 0) {
-					full_image.copyTo(full_image_roi);
-					current_coord_vec.pop_back();
-				}
-			}
 
 			if (selected)
 			{
@@ -559,11 +554,8 @@ int main(int argc, char *argv[])
 						Point2i(max(x_start, x_end), max(y_start, y_end)));
 					rectangle(frame, selected_rect, Scalar(150, 200, 150));
 
-					if (show_mark_class)
-					{
-						putText(frame, std::to_string(current_obj_id) + current_synset_name,
-							selected_rect.tl() + Point2i(2, 22), FONT_HERSHEY_SIMPLEX, 0.8, Scalar(150, 200, 150), 2);
-					}
+					putText(frame, std::to_string(current_obj_id) + current_synset_name,
+						selected_rect.tl() + Point2i(2, 22), FONT_HERSHEY_SIMPLEX, 0.8, Scalar(150, 200, 150), 2);
 				}
 			}
 
@@ -609,13 +601,9 @@ int main(int argc, char *argv[])
 				int blue = (offset + 140) % 255 * ((i.id + 0) % 3);
 				Scalar color_rect(red, green, blue);    // Scalar color_rect(100, 200, 100);
 
-				if (show_mark_class)
-				{
-					putText(full_image_roi, std::to_string(i.id) + synset_name,
-						i.abs_rect.tl() + Point2f(2, 22), FONT_HERSHEY_SIMPLEX, 0.8, color_rect, 2);
-				}
-
-				rectangle(full_image_roi, i.abs_rect, color_rect, mark_line_width);
+				putText(full_image_roi, std::to_string(i.id) + synset_name,
+					i.abs_rect.tl() + Point2f(2, 22), FONT_HERSHEY_SIMPLEX, 0.8, color_rect, 2);
+				rectangle(full_image_roi, i.abs_rect, color_rect, 2);
 			}
 
 
@@ -631,21 +619,58 @@ int main(int argc, char *argv[])
 				putText(full_image_roi, obj_str, Point2i(0, 21), FONT_HERSHEY_DUPLEX, 0.8, Scalar(50, 200, 100), 1);
 			}
 
-			if (show_help)
-			{
-				putText(full_image_roi,
-					"<- prev_img     -> next_img     space - next_img     c - clear_marks     n - one_object_per_img    0-9 - obj_id",
-					Point2i(0, 45), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(50, 10, 10), 2);
-				putText(full_image_roi,
-					"ESC - exit   w - line width   k - hide obj_name   z - undo", //   h - disable help",
-					Point2i(0, 80), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(50, 10, 10), 2);
+			std::string text = "X - get current coor";
+			putText(full_image_roi, text, Point2i(400, 20), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(100, 50, 50), 2);
+			
+			//按下x鍵取得當下座標
+			if (position == true) {
+				position = false;
+
+				std::string const txt_filename_path = images_path + "/" + "direction.txt";
+				std::cout << "txt_filename_path = " << txt_filename_path << std::endl;
+				std::ofstream ofshead(txt_filename_path, std::ios::out | std::ios::app);
+				ofshead << std::fixed;
+				ofshead.precision(0);
+
+				//當下滑鼠座標
+				float dir_x, dir_y;
+				//物件中心位置
+				float obj_center_x, obj_center_y;
+			
+				for (auto &i : current_coord_vec) {
+					full_image.copyTo(full_image_roi);
+					int const x_inside = std::min((int)x_end, full_image_roi.cols);
+					int const y_inside = std::min(std::max(0, y_end - (int)prev_img_rect.height), full_image_roi.rows);
+					float const relative_center_x = (float)(x_inside) / full_image_roi.cols;
+					float const relative_center_y = (float)(y_inside) / full_image_roi.rows;
+					int const abs_x = relative_center_x * current_img_size.width;
+					int const abs_y = relative_center_y * current_img_size.height;
+					obj_center_x = (i.abs_rect.x + i.abs_rect.width / 2) / full_image_roi.cols * current_img_size.width;
+					obj_center_y = (i.abs_rect.y + i.abs_rect.height / 2) / full_image_roi.rows * current_img_size.height;
+
+					dir_x = abs_x;
+					dir_y = abs_y;
+
+				}
+
+				ofshead << obj_center_x << " " <<
+					obj_center_y <<  " " <<
+					dir_x << " " <<
+					dir_y << " " << std::endl;
+				
+				array[0] = (obj_center_x / current_img_size.width) * 1280;
+				array[1] = (obj_center_y / current_img_size.height) * 720;
+				array[2] = (dir_x / current_img_size.width) * 1280;
+				array[3] = (dir_y / current_img_size.height) * 720;
+			
 			}
-			else
-			{
-				putText(full_image_roi,
-					"h - show help",
-					Point2i(0, 45), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(50, 10, 10), 2);
-			}
+			//std::cout << array[0] << "/" << array[1] << "/" << array[2] << "/" << array[3] << std::endl;
+			arrowedLine(full_image, Point2i(array[0], array[1]), Point2i(array[2], array[3]), Scalar(50, 200, 100), 2);
+									
+			putText(full_image_roi,
+				"<- prev_img  -> next_img  space - next_img  c - clear_marks  n - one_object_per_img  0-9 - obj_id  ESC - exit",
+				Point2i(0, 45), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(50, 10, 10), 2);
+
 
 
 			// arrows
@@ -680,20 +705,14 @@ int main(int argc, char *argv[])
 
 			if (pressed_key >= 0)
 				for (int i = 0; i < 5; ++i) cv::waitKey(1);
-			
-			if (exit_flag) break;	// exit after saving
-			if (pressed_key == 27 || pressed_key == 1048603) exit_flag = true;// break;  // ESC - save & exit
+
+			if (pressed_key == 27 || pressed_key == 1048603)  break;  // ESC - exit
 
 			if (pressed_key >= '0' && pressed_key <= '9') current_obj_id = pressed_key - '0';   // 0 - 9
 			if (pressed_key >= 1048624 && pressed_key <= 1048633) current_obj_id = pressed_key - 1048624;   // 0 - 9
 
 			switch (pressed_key)
 			{
-			case 'z':		// z
-			case 1048698:	// z
-			    undo = true;
-				break;
-
 			case 32:        // SPACE
 			case 1048608:	// SPACE
 				++trackbar_value;
@@ -723,18 +742,10 @@ int main(int argc, char *argv[])
 				next_by_click = !next_by_click;
 				full_image.copyTo(full_image_roi);
 				break;
-			case 'w':       // w
-			case 1048695:   // w
-				mark_line_width = mark_line_width % MAX_MARK_LINE_WIDTH + 1;
-			break;
-			case 'h':		// h
-			case 1048680:	// h
-				show_help = !show_help;
-			break;
-			case 'k':
-			case 1048683:
-				show_mark_class = !show_mark_class;
-				break;
+			case 'x':       //x
+			case 1048696:   //x
+				position = !position;
+				full_image.copyTo(full_image_roi);
 			default:
 				;
 			}
